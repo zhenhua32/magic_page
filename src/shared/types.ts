@@ -33,6 +33,7 @@ export interface Settings {
   apiBase: string
   model: string
   temperature: number
+  maxContextTokens: number
   systemPrompt: string
 }
 
@@ -41,6 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   apiBase: 'https://api.openai.com/v1',
   model: 'gpt-4o',
   temperature: 0.7,
+  maxContextTokens: 256000,
   systemPrompt: `你是一个网页修改助手。用户会描述想要对当前网页进行的修改，你需要生成对应的 CSS 和/或 JavaScript 代码来实现修改。
 
 请遵循以下规则：
@@ -72,6 +74,7 @@ export interface PageInfo {
   url: string
   title: string
   description: string
+  fullHtml: string
   htmlStructure: string
 }
 

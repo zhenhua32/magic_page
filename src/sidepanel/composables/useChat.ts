@@ -24,17 +24,49 @@ export function useChat() {
     }
   }
 
-  function buildSystemPrompt(settings: { systemPrompt: string }): string {
-    let prompt = settings.systemPrompt || DEFAULT_SETTINGS.systemPrompt
-    if (pageInfo.value) {
-      prompt += `\n\n当前页面信息：
-- URL: ${pageInfo.value.url}
-- 标题: ${pageInfo.value.title}
-- 描述: ${pageInfo.value.description || '无'}
+  /** 粗略估算 token 数（中文约 1.5 token/字符，英文约 0.25 token/单词） */
+  function estimateTokens(text: string): number {
+    return Math.ceil(text.length / 2.5)
+  }
 
-页面 DOM 结构（简化）：
-${pageInfo.value.htmlStructure}`
+  function buildSystemPrompt(settings: { systemPrompt: string; maxContextTokens: number }): string {
+    let prompt = settings.systemPrompt || DEFAULT_SETTINGS.systemPrompt
+    if (!pageInfo.value) return prompt
+
+    const maxTokens = settings.maxContextTokens || DEFAULT_SETTINGS.maxContextTokens
+    // 为对话消息和 AI 回复预留空间（约 30%）
+    const tokenBudgetForPage = Math.floor(maxTokens * 0.7)
+
+    const pageHeader = `\n\n当前页面信息：\n- URL: ${pageInfo.value.url}\n- 标题: ${pageInfo.value.title}\n- 描述: ${pageInfo.value.description || '无'}\n\n`
+
+    const baseTokens = estimateTokens(prompt) + estimateTokens(pageHeader)
+    const remainingBudget = tokenBudgetForPage - baseTokens
+
+    if (remainingBudget <= 0) {
+      return prompt + pageHeader
     }
+
+    // 优先使用完整 HTML
+    const fullHtml = pageInfo.value.fullHtml
+    const fullHtmlTokens = estimateTokens(fullHtml)
+
+    if (fullHtmlTokens <= remainingBudget) {
+      // 完整 HTML 放得下，直接使用
+      prompt += pageHeader + `页面完整 HTML：\n${fullHtml}`
+    } else {
+      // 完整 HTML 太大，尝试截断
+      const charBudget = Math.floor(remainingBudget * 2.5)
+      if (charBudget > 2000) {
+        // 截断 HTML 但保留尽可能多的内容
+        const truncatedHtml = fullHtml.slice(0, charBudget)
+        prompt += pageHeader + `页面 HTML（已截断前 ${Math.floor(charBudget / 1000)}k 字符）：\n${truncatedHtml}\n... (已截断)`
+      } else {
+        // 预算非常有限，回退到简化结构
+        const structure = pageInfo.value.htmlStructure
+        prompt += pageHeader + `页面 DOM 结构（简化）：\n${structure}`
+      }
+    }
+
     return prompt
   }
 

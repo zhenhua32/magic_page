@@ -45,6 +45,21 @@
           step="0.1"
         />
       </div>
+
+      <div class="form-group">
+        <label class="form-label">上下文长度 (tokens): {{ formatTokens(settings.maxContextTokens) }}</label>
+        <select v-model.number="settings.maxContextTokens" class="form-input">
+          <option :value="8000">8K</option>
+          <option :value="16000">16K</option>
+          <option :value="32000">32K</option>
+          <option :value="64000">64K</option>
+          <option :value="128000">128K</option>
+          <option :value="256000">256K</option>
+          <option :value="512000">512K</option>
+          <option :value="1000000">1M</option>
+        </select>
+        <p class="form-hint">上下文越大，发送给 AI 的页面信息越完整</p>
+      </div>
     </div>
 
     <div class="settings-section">
@@ -81,6 +96,11 @@ const { settings, loading, testing, testResult, save, test } = useSettings()
 
 async function handleSave() {
   await save()
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1000000) return (n / 1000000) + 'M'
+  return (n / 1000) + 'K'
 }
 </script>
 
@@ -133,6 +153,13 @@ async function handleSave() {
 .form-range {
   width: 100%;
   accent-color: var(--accent);
+}
+
+.form-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.7;
 }
 
 .form-textarea {

@@ -107,6 +107,18 @@ function getHtmlStructure(): string {
   return summarize(document.body, 0) || '(empty)'
 }
 
+/** 获取清理后的完整 HTML（移除 script/style 内容和注入的补丁元素） */
+function getCleanHtml(): string {
+  const clone = document.documentElement.cloneNode(true) as HTMLElement
+  // 移除 script、style、noscript 内容
+  clone.querySelectorAll('script, style, noscript, link[rel="stylesheet"]').forEach(el => el.remove())
+  // 移除注入的补丁元素
+  clone.querySelectorAll('[data-magic-patch], [data-magic-patch-js]').forEach(el => el.remove())
+  // 移除 SVG 内容（通常很大且对修改无用）
+  clone.querySelectorAll('svg').forEach(el => el.remove())
+  return clone.outerHTML
+}
+
 /** 获取页面基本信息 */
 function getPageInfo(): PageInfo {
   const metaDesc = document.querySelector('meta[name="description"]')
@@ -114,6 +126,7 @@ function getPageInfo(): PageInfo {
     url: location.href,
     title: document.title,
     description: metaDesc?.getAttribute('content') || '',
+    fullHtml: getCleanHtml(),
     htmlStructure: getHtmlStructure(),
   }
 }
