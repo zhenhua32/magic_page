@@ -30,7 +30,10 @@ export function useChat() {
       prompt += `\n\n当前页面信息：
 - URL: ${pageInfo.value.url}
 - 标题: ${pageInfo.value.title}
-- 描述: ${pageInfo.value.description || '无'}`
+- 描述: ${pageInfo.value.description || '无'}
+
+页面 DOM 结构（简化）：
+${pageInfo.value.htmlStructure}`
     }
     return prompt
   }

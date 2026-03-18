@@ -139,10 +139,13 @@ interface PendingApply {
 const pendingApply = ref<PendingApply | null>(null)
 
 function handleApplyCode(lang: string, code: string) {
+  // 找到最近一条用户消息作为补丁名称
+  const lastUserMsg = [...messages.value].reverse().find((m) => m.role === 'user')
+  const desc = lastUserMsg ? lastUserMsg.content.slice(0, 50) : '修改'
   pendingApply.value = {
     lang,
     code,
-    name: `${lang.toUpperCase()} 修改 ${new Date().toLocaleTimeString('zh-CN')}`,
+    name: desc,
   }
 }
 

@@ -42,6 +42,71 @@ function removeAllPatches(): void {
   document.querySelectorAll('script[data-magic-patch-js]').forEach((el) => el.remove())
 }
 
+/** 简化 DOM 树，提取关键结构信息 */
+function getHtmlStructure(): string {
+  const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'SVG', 'PATH', 'LINK', 'META', 'BR', 'HR', 'IMG'])
+  const MAX_DEPTH = 5
+  const MAX_CHILDREN = 15
+  const MAX_TEXT_LEN = 80
+  const MAX_TOTAL_LEN = 6000
+
+  let totalLen = 0
+
+  function summarize(el: Element, depth: number): string {
+    if (totalLen > MAX_TOTAL_LEN) return ''
+    if (depth > MAX_DEPTH) return ''
+    if (SKIP_TAGS.has(el.tagName)) return ''
+    if (el.hasAttribute('data-magic-patch') || el.hasAttribute('data-magic-patch-js')) return ''
+
+    const tag = el.tagName.toLowerCase()
+    const attrs: string[] = []
+    if (el.id) attrs.push(`#${el.id}`)
+    if (el.className && typeof el.className === 'string') {
+      const classes = el.className.trim().split(/\s+/).slice(0, 3).join('.')
+      if (classes) attrs.push(`.${classes}`)
+    }
+
+    const selector = tag + attrs.join('')
+
+    // 获取直接文本内容（不包含子元素文本）
+    let directText = ''
+    for (const node of el.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const t = (node.textContent || '').trim()
+        if (t) directText += t + ' '
+      }
+    }
+    directText = directText.trim()
+    if (directText.length > MAX_TEXT_LEN) {
+      directText = directText.slice(0, MAX_TEXT_LEN) + '...'
+    }
+
+    const children = Array.from(el.children)
+    const childResults: string[] = []
+    const indent = '  '.repeat(depth)
+
+    for (let i = 0; i < Math.min(children.length, MAX_CHILDREN); i++) {
+      if (totalLen > MAX_TOTAL_LEN) break
+      const r = summarize(children[i], depth + 1)
+      if (r) childResults.push(r)
+    }
+    if (children.length > MAX_CHILDREN) {
+      childResults.push(`${'  '.repeat(depth + 1)}... (${children.length - MAX_CHILDREN} more)`)
+    }
+
+    let line = `${indent}<${selector}>`
+    if (directText) line += ` "${directText}"`
+    totalLen += line.length
+
+    if (childResults.length > 0) {
+      return line + '\n' + childResults.join('\n')
+    }
+    return line
+  }
+
+  return summarize(document.body, 0) || '(empty)'
+}
+
 /** 获取页面基本信息 */
 function getPageInfo(): PageInfo {
   const metaDesc = document.querySelector('meta[name="description"]')
@@ -49,6 +114,7 @@ function getPageInfo(): PageInfo {
     url: location.href,
     title: document.title,
     description: metaDesc?.getAttribute('content') || '',
+    htmlStructure: getHtmlStructure(),
   }
 }
 

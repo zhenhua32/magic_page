@@ -72,6 +72,7 @@ export interface PageInfo {
   url: string
   title: string
   description: string
+  htmlStructure: string
 }
 
 export interface PatchPayload {
