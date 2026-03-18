@@ -1,0 +1,522 @@
+<template>
+  <div class="chat-panel">
+    <!-- 消息列表 -->
+    <div class="messages-container" ref="messagesContainer">
+      <div v-if="messages.length === 0 && !isStreaming" class="empty-state">
+        <div class="empty-icon">✨</div>
+        <p class="empty-title">开始对话</p>
+        <p class="empty-desc">描述你想对当前页面做的修改，AI 会生成对应的代码</p>
+        <div class="quick-actions">
+          <button class="quick-btn" @click="quickSend('把页面背景改为深色')">🌙 深色背景</button>
+          <button class="quick-btn" @click="quickSend('隐藏页面上所有的广告')">🚫 隐藏广告</button>
+          <button class="quick-btn" @click="quickSend('增大页面字体大小')">🔤 放大字体</button>
+        </div>
+      </div>
+
+      <ChatMessage
+        v-for="msg in messages"
+        :key="msg.id"
+        :message="msg"
+        @apply-code="handleApplyCode"
+      />
+
+      <!-- 流式输出中 -->
+      <div v-if="isStreaming && currentStreamText" class="chat-message assistant streaming">
+        <div class="message-header">
+          <span class="role-label">AI</span>
+          <span class="streaming-indicator">● 生成中...</span>
+        </div>
+        <div class="message-body">
+          <p class="text-block">{{ currentStreamText }}</p>
+        </div>
+      </div>
+
+      <!-- 错误提示 -->
+      <div v-if="error" class="error-banner">
+        <span>⚠️ {{ error }}</span>
+        <button class="error-close" @click="error = null">×</button>
+      </div>
+    </div>
+
+    <!-- 页面信息 -->
+    <div v-if="pageInfo" class="page-info-bar">
+      <span class="page-info-label">📄</span>
+      <span class="page-info-text" :title="pageInfo.url">{{ pageInfo.title || pageInfo.url }}</span>
+    </div>
+
+    <!-- 输入区域 -->
+    <div class="input-area">
+      <div class="input-wrapper">
+        <textarea
+          v-model="inputText"
+          class="message-input"
+          placeholder="描述你想修改的内容..."
+          rows="1"
+          @keydown.enter.exact.prevent="sendMessage"
+          @input="autoResize"
+          ref="inputRef"
+        ></textarea>
+        <div class="input-actions">
+          <button v-if="isStreaming" class="action-btn stop-btn" @click="stopStreaming" title="停止">
+            ⏹
+          </button>
+          <button
+            v-else
+            class="action-btn send-btn"
+            @click="sendMessage"
+            :disabled="!inputText.trim()"
+            title="发送"
+          >
+            ➤
+          </button>
+        </div>
+      </div>
+      <div class="input-toolbar">
+        <button class="toolbar-btn" @click="clearMessages" title="清空对话">🗑️ 清空</button>
+        <button class="toolbar-btn" @click="loadPageInfo" title="刷新页面信息">🔄 刷新</button>
+      </div>
+    </div>
+
+    <!-- 应用代码确认弹窗 -->
+    <div v-if="pendingApply" class="apply-dialog-overlay" @click.self="pendingApply = null">
+      <div class="apply-dialog">
+        <h3>确认应用修改</h3>
+        <p class="apply-desc">
+          将以下 <strong>{{ pendingApply.lang.toUpperCase() }}</strong> 代码注入到当前页面：
+        </p>
+        <pre class="apply-code"><code>{{ pendingApply.code }}</code></pre>
+        <div class="form-group">
+          <label class="form-label">补丁名称</label>
+          <input v-model="pendingApply.name" class="form-input" placeholder="给这个修改起个名字" />
+        </div>
+        <div class="apply-actions">
+          <button class="btn btn-primary" @click="confirmApply">✅ 确认应用</button>
+          <button class="btn btn-secondary" @click="pendingApply = null">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, nextTick, watch } from 'vue'
+import ChatMessage from './ChatMessage.vue'
+import { useChat } from '../composables/useChat'
+import { usePatches } from '../composables/usePatches'
+import { generateId } from '@/shared/storage'
+import type { Patch } from '@/shared/types'
+
+const {
+  messages,
+  inputText,
+  isStreaming,
+  currentStreamText,
+  pageInfo,
+  error,
+  sendMessage,
+  stopStreaming,
+  clearMessages,
+  loadPageInfo,
+} = useChat()
+
+const currentUrl = ref('')
+const { addPatch } = usePatches(currentUrl)
+
+// 同步 pageInfo 的 URL 到 currentUrl
+watch(pageInfo, (info) => {
+  if (info) currentUrl.value = info.url
+})
+
+const messagesContainer = ref<HTMLElement>()
+const inputRef = ref<HTMLTextAreaElement>()
+
+interface PendingApply {
+  lang: string
+  code: string
+  name: string
+}
+
+const pendingApply = ref<PendingApply | null>(null)
+
+function handleApplyCode(lang: string, code: string) {
+  pendingApply.value = {
+    lang,
+    code,
+    name: `${lang.toUpperCase()} 修改 ${new Date().toLocaleTimeString('zh-CN')}`,
+  }
+}
+
+async function confirmApply() {
+  if (!pendingApply.value || !pageInfo.value) return
+
+  const patch: Patch = {
+    id: generateId(),
+    url: pageInfo.value.url,
+    name: pendingApply.value.name,
+    cssCode: pendingApply.value.lang === 'css' ? pendingApply.value.code : '',
+    jsCode: pendingApply.value.lang === 'js' ? pendingApply.value.code : '',
+    enabled: true,
+    createdAt: Date.now(),
+    conversationId: '',
+  }
+
+  await addPatch(patch)
+  pendingApply.value = null
+}
+
+function quickSend(text: string) {
+  inputText.value = text
+  sendMessage()
+}
+
+function autoResize(event: Event) {
+  const el = event.target as HTMLTextAreaElement
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+}
+
+// 自动滚动到底部
+watch(
+  [() => messages.value.length, currentStreamText],
+  () => {
+    nextTick(() => {
+      if (messagesContainer.value) {
+        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+      }
+    })
+  },
+)
+</script>
+
+<style scoped>
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.empty-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  max-width: 240px;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.quick-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  transition: all 0.2s;
+}
+
+.quick-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+/* Streaming message styles */
+.chat-message.streaming {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-message .message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.chat-message .role-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.streaming-indicator {
+  font-size: 11px;
+  color: var(--success);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.chat-message .message-body {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.chat-message .text-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.error-close {
+  background: none;
+  color: var(--danger);
+  font-size: 16px;
+  padding: 0 4px;
+}
+
+.page-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.page-info-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input-area {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 8px 12px;
+  transition: border-color 0.2s;
+}
+
+.input-wrapper:focus-within {
+  border-color: var(--accent);
+}
+
+.message-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  outline: none;
+  resize: none;
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 120px;
+}
+
+.message-input::placeholder {
+  color: var(--text-muted);
+}
+
+.input-actions {
+  flex-shrink: 0;
+}
+
+.action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.send-btn {
+  background: var(--accent);
+  color: white;
+}
+
+.send-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.send-btn:disabled {
+  opacity: 0.3;
+}
+
+.stop-btn {
+  background: var(--danger);
+  color: white;
+}
+
+.stop-btn:hover {
+  background: var(--danger-hover);
+}
+
+.input-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.toolbar-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.toolbar-btn:hover {
+  background: var(--accent-light);
+  color: var(--text-primary);
+}
+
+/* Apply dialog */
+.apply-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+
+.apply-dialog {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  width: 100%;
+  max-width: 400px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.apply-dialog h3 {
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+
+.apply-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.apply-code {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-family: 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.apply-dialog .form-group {
+  margin-bottom: 16px;
+}
+
+.apply-dialog .form-label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.apply-dialog .form-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.apply-dialog .form-input:focus {
+  border-color: var(--accent);
+}
+
+.apply-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.apply-actions .btn {
+  flex: 1;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.apply-actions .btn-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.apply-actions .btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.apply-actions .btn-secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+</style>
