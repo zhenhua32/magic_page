@@ -186,8 +186,12 @@ async function confirmApply() {
     id: patchId,
     url: pageInfo.value.url,
     name: pendingApply.value.name,
-    cssCode: pendingApply.value.lang === 'css' ? pendingApply.value.code : '',
-    jsCode: pendingApply.value.lang === 'js' ? pendingApply.value.code : '',
+    cssCode: pendingApply.value.lang === 'css'
+      ? pendingApply.value.code
+      : (pendingApply.value.mode === 'update' ? (existingPatch?.cssCode || '') : ''),
+    jsCode: pendingApply.value.lang === 'js'
+      ? pendingApply.value.code
+      : (pendingApply.value.mode === 'update' ? (existingPatch?.jsCode || '') : ''),
     enabled: true,
     createdAt: existingPatch?.createdAt || Date.now(),
     conversationId: currentConversationId.value,

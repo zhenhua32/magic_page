@@ -28,11 +28,15 @@ export function usePatches(currentUrl: ReturnType<typeof ref<string>>) {
 
   async function addPatch(patch: Patch): Promise<void> {
     await savePatch(patch)
-    await requestInjectPatch({
-      patchId: patch.id,
-      cssCode: patch.cssCode,
-      jsCode: patch.jsCode,
-    })
+    try {
+      await requestInjectPatch({
+        patchId: patch.id,
+        cssCode: patch.cssCode,
+        jsCode: patch.jsCode,
+      })
+    } catch {
+      // content script 可能不可用
+    }
     await loadPatches()
   }
 
