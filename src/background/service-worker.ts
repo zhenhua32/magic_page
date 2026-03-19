@@ -1,10 +1,75 @@
 import { MessageAction, type ExtensionMessage, type PatchPayload } from '../shared/types'
 import { getPatchesForUrl, getPatch } from '../shared/storage'
 
-// 点击扩展图标时打开 Side Panel
-chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
+// 按窗口记录当前由用户主动打开过面板的 tab
+const openPanelTabByWindow = new Map<number, number>()
+
+// 禁用全局 side panel，并关闭内置点击打开行为，只保留按 tab 打开的面板
+void chrome.sidePanel
+  .setOptions({
+    enabled: false,
+    path: 'src/sidepanel/index.html',
+  })
   .catch(console.error)
+
+void chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: false })
+  .catch(console.error)
+
+// 点击扩展图标时打开 Side Panel
+// 注意：open 必须在用户点击触发的调用链中执行，不能在 await 之后调用
+chrome.action.onClicked.addListener((tab) => {
+  if (!tab.id || !tab.windowId) return
+
+  const previousTabId = openPanelTabByWindow.get(tab.windowId)
+  if (previousTabId && previousTabId !== tab.id) {
+    void chrome.sidePanel.setOptions({
+      tabId: previousTabId,
+      path: 'src/sidepanel/index.html',
+      enabled: false,
+    })
+  }
+
+  openPanelTabByWindow.set(tab.windowId, tab.id)
+
+  void chrome.sidePanel.setOptions({
+    tabId: tab.id,
+    path: 'src/sidepanel/index.html',
+    enabled: true,
+  })
+
+  void chrome.sidePanel.open({ tabId: tab.id }).catch(console.error)
+})
+
+// 切换 tab 时只禁用当前激活的非目标 tab。
+// 已打开面板的原 tab 保持 enabled，这样切回去时 Chrome 会自动恢复显示。
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
+  const openTabId = openPanelTabByWindow.get(windowId)
+
+  if (openTabId === tabId) {
+    await chrome.sidePanel.setOptions({
+      tabId,
+      path: 'src/sidepanel/index.html',
+      enabled: true,
+    })
+    return
+  }
+
+  await chrome.sidePanel.setOptions({
+    tabId,
+    path: 'src/sidepanel/index.html',
+    enabled: false,
+  })
+})
+
+// tab 关闭时清理记录
+chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const [windowId, openTabId] of openPanelTabByWindow.entries()) {
+    if (openTabId === tabId) {
+      openPanelTabByWindow.delete(windowId)
+    }
+  }
+})
 
 // 监听来自 Side Panel 的消息并转发到 Content Script
 chrome.runtime.onMessage.addListener(
