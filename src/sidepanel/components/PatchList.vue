@@ -1,9 +1,9 @@
 <template>
   <div class="patch-list-panel">
     <!-- 当前页面 URL -->
-    <div v-if="currentUrl" class="url-bar">
+    <div v-if="sharedCurrentUrl" class="url-bar">
       <span class="url-label">📄 当前页面:</span>
-      <span class="url-text" :title="currentUrl">{{ currentUrl }}</span>
+      <span class="url-text" :title="sharedCurrentUrl">{{ sharedCurrentUrl }}</span>
     </div>
 
     <div v-if="loading" class="loading-state">
@@ -33,14 +33,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, inject, onMounted, type Ref } from 'vue'
 import PatchItem from './PatchItem.vue'
-import { usePatches } from '../composables/usePatches'
+import type { usePatches } from '../composables/usePatches'
 import { requestPageInfo } from '@/shared/messaging'
-import type { PageInfo } from '@/shared/types'
 
-const currentUrl = ref('')
-const { patches, loading, toggle, removePatch, loadPatches } = usePatches(currentUrl)
+const sharedCurrentUrl = inject<Ref<string>>('sharedCurrentUrl')!
+const { patches, loading, toggle, removePatch, loadPatches } = inject<ReturnType<typeof usePatches>>('patchesState')!
 
 const enabledCount = computed(() => patches.value.filter((p) => p.enabled).length)
 
@@ -52,22 +51,17 @@ async function handleDelete(id: string) {
   await removePatch(id)
 }
 
+// 切换到补丁页时刷新列表（URL 可能已由 ChatPanel 设置）
 onMounted(async () => {
-  try {
-    const info = await requestPageInfo()
-    currentUrl.value = info.url
-  } catch {
-    // 无法获取页面信息
-  }
-})
-
-// 监听 tab 切换时刷新
-chrome.tabs?.onActivated?.addListener(async () => {
-  try {
-    const info = await requestPageInfo()
-    currentUrl.value = info.url
-  } catch {
-    // ignore
+  if (!sharedCurrentUrl.value) {
+    try {
+      const info = await requestPageInfo()
+      sharedCurrentUrl.value = info.url
+    } catch {
+      // 无法获取页面信息
+    }
+  } else {
+    await loadPatches()
   }
 })
 </script>

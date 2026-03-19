@@ -24,10 +24,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, provide } from 'vue'
 import ChatPanel from './components/ChatPanel.vue'
 import PatchList from './components/PatchList.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
+import { usePatches } from './composables/usePatches'
 
 const activeTab = ref<'chat' | 'patches' | 'settings'>('chat')
 
@@ -36,6 +37,12 @@ const tabs = [
   { id: 'patches' as const, icon: '🩹', label: '补丁' },
   { id: 'settings' as const, icon: '⚙️', label: '设置' },
 ]
+
+// 在 App 级别共享 patches 状态，ChatPanel 和 PatchList 使用同一个实例
+const sharedCurrentUrl = ref('')
+const patchesState = usePatches(sharedCurrentUrl)
+provide('sharedCurrentUrl', sharedCurrentUrl)
+provide('patchesState', patchesState)
 </script>
 
 <style scoped>

@@ -109,12 +109,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, watch } from 'vue'
+import { ref, inject, nextTick, watch, type Ref } from 'vue'
 import ChatMessage from './ChatMessage.vue'
 import { useChat } from '../composables/useChat'
-import { usePatches } from '../composables/usePatches'
 import { generateId } from '@/shared/storage'
 import type { Patch } from '@/shared/types'
+import type { usePatches } from '../composables/usePatches'
 
 const {
   messages,
@@ -133,12 +133,12 @@ const {
   getLatestPatchId,
 } = useChat()
 
-const currentUrl = ref('')
-const { patches, addPatch } = usePatches(currentUrl)
+const sharedCurrentUrl = inject<Ref<string>>('sharedCurrentUrl')!
+const { patches, addPatch } = inject<ReturnType<typeof usePatches>>('patchesState')!
 
-// 同步 pageInfo 的 URL 到 currentUrl
+// 同步 pageInfo 的 URL 到共享的 currentUrl
 watch(pageInfo, (info) => {
-  if (info) currentUrl.value = info.url
+  if (info) sharedCurrentUrl.value = info.url
 })
 
 const messagesContainer = ref<HTMLElement>()
