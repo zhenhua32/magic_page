@@ -1,11 +1,27 @@
 import type { Settings, Patch, Conversation } from './types'
 import { DEFAULT_SETTINGS } from './types'
 
+const LEGACY_DEFAULT_SYSTEM_PROMPT = `你是一个网页修改助手。用户会描述想要对当前网页进行的修改，你需要生成对应的 CSS 和/或 JavaScript 代码来实现修改。
+
+请遵循以下规则：
+1. 将 CSS 代码放在 \`\`\`css 代码块中
+2. 将 JavaScript 代码放在 \`\`\`js 代码块中
+3. 先用简短的文字说明你将做什么修改
+4. CSS 优先：如果仅靠 CSS 就能实现，就不要使用 JS
+5. JS 代码应该是幂等的（多次执行不会产生副作用）
+6. 不要使用 document.write 或 eval 等危险操作`
+
 // ===== Settings (chrome.storage.sync) =====
 
 export async function getSettings(): Promise<Settings> {
   const result = await chrome.storage.sync.get('settings')
-  return { ...DEFAULT_SETTINGS, ...result.settings }
+  const merged = { ...DEFAULT_SETTINGS, ...result.settings }
+
+  if (!result.settings?.systemPrompt || result.settings.systemPrompt === LEGACY_DEFAULT_SYSTEM_PROMPT) {
+    merged.systemPrompt = DEFAULT_SETTINGS.systemPrompt
+  }
+
+  return merged
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
