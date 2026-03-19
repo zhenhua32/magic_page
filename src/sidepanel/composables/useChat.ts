@@ -2,7 +2,7 @@ import { ref, onMounted } from 'vue'
 import type { ChatMessage, PageInfo } from '@/shared/types'
 import { DEFAULT_SETTINGS } from '@/shared/types'
 import { streamChat, extractCodeBlocks } from '@/shared/ai-client'
-import { getConversationsForUrl, getSettings, saveConversation } from '@/shared/storage'
+import { getConversationsForUrl, getSettings, saveConversation, deleteConversation } from '@/shared/storage'
 import { generateId } from '@/shared/storage'
 import { requestPageInfo } from '@/shared/messaging'
 
@@ -252,7 +252,8 @@ export function useChat() {
     isStreaming.value = false
   }
 
-  function clearMessages() {
+  async function clearMessages() {
+    const conversationId = currentConversationId.value
     messages.value = []
     currentStreamText.value = ''
     error.value = null
@@ -260,6 +261,9 @@ export function useChat() {
     currentConversationTitle.value = ''
     currentConversationCreatedAt.value = 0
     currentPatchIds.value = []
+    if (conversationId) {
+      await deleteConversation(conversationId)
+    }
   }
 
   async function linkPatchToMessage(messageId: string, patchId: string) {
