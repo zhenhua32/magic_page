@@ -14,9 +14,9 @@
             <button
               v-if="message.role === 'assistant'"
               class="apply-btn"
-              @click="$emit('applyCode', block.lang, block.content)"
+              @click="$emit('applyCode', block.lang, block.content, message.id)"
             >
-              ▶ 应用此修改
+              {{ message.patchId ? '↻ 更新此修改' : '▶ 应用此修改' }}
             </button>
           </div>
           <pre class="code-content"><code>{{ block.content }}</code></pre>
@@ -35,7 +35,7 @@ const props = defineProps<{
 }>()
 
 defineEmits<{
-  applyCode: [lang: string, code: string]
+  applyCode: [lang: string, code: string, messageId: string]
 }>()
 
 interface ContentBlock {

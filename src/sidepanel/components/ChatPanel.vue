@@ -42,6 +42,9 @@
     <div v-if="pageInfo" class="page-info-bar">
       <span class="page-info-label">📄</span>
       <span class="page-info-text" :title="pageInfo.url">{{ pageInfo.title || pageInfo.url }}</span>
+      <span v-if="currentConversationTitle" class="conversation-chip" :title="currentConversationTitle">
+        {{ currentConversationTitle }}
+      </span>
     </div>
 
     <!-- 输入区域 -->
@@ -89,6 +92,13 @@
           <label class="form-label">补丁名称</label>
           <input v-model="pendingApply.name" class="form-input" placeholder="给这个修改起个名字" />
         </div>
+        <div v-if="pendingApply.targetPatchId" class="form-group">
+          <label class="form-label">应用方式</label>
+          <select v-model="pendingApply.mode" class="form-input">
+            <option value="update">更新当前迭代补丁</option>
+            <option value="create">创建新补丁</option>
+          </select>
+        </div>
         <div class="apply-actions">
           <button class="btn btn-primary" @click="confirmApply">✅ 确认应用</button>
           <button class="btn btn-secondary" @click="pendingApply = null">取消</button>
@@ -113,14 +123,18 @@ const {
   currentStreamText,
   pageInfo,
   error,
+  currentConversationId,
+  currentConversationTitle,
   sendMessage,
   stopStreaming,
   clearMessages,
   loadPageInfo,
+  linkPatchToMessage,
+  getLatestPatchId,
 } = useChat()
 
 const currentUrl = ref('')
-const { addPatch } = usePatches(currentUrl)
+const { patches, addPatch } = usePatches(currentUrl)
 
 // 同步 pageInfo 的 URL 到 currentUrl
 watch(pageInfo, (info) => {
@@ -134,36 +148,53 @@ interface PendingApply {
   lang: string
   code: string
   name: string
+  mode: 'create' | 'update'
+  messageId: string
+  targetPatchId: string
 }
 
 const pendingApply = ref<PendingApply | null>(null)
 
-function handleApplyCode(lang: string, code: string) {
+function handleApplyCode(lang: string, code: string, messageId: string) {
   // 找到最近一条用户消息作为补丁名称
   const lastUserMsg = [...messages.value].reverse().find((m) => m.role === 'user')
+  const sourceMessage = messages.value.find((message) => message.id === messageId)
+  const latestPatchId = sourceMessage?.patchId || getLatestPatchId()
   const desc = lastUserMsg ? lastUserMsg.content.slice(0, 50) : '修改'
   pendingApply.value = {
     lang,
     code,
     name: desc,
+    mode: latestPatchId ? 'update' : 'create',
+    messageId,
+    targetPatchId: latestPatchId,
   }
 }
 
 async function confirmApply() {
   if (!pendingApply.value || !pageInfo.value) return
 
+  const existingPatch = pendingApply.value.targetPatchId
+    ? patches.value.find((patch) => patch.id === pendingApply.value!.targetPatchId)
+    : undefined
+
+  const patchId = pendingApply.value.mode === 'update' && pendingApply.value.targetPatchId
+    ? pendingApply.value.targetPatchId
+    : generateId()
+
   const patch: Patch = {
-    id: generateId(),
+    id: patchId,
     url: pageInfo.value.url,
     name: pendingApply.value.name,
     cssCode: pendingApply.value.lang === 'css' ? pendingApply.value.code : '',
     jsCode: pendingApply.value.lang === 'js' ? pendingApply.value.code : '',
     enabled: true,
-    createdAt: Date.now(),
-    conversationId: '',
+    createdAt: existingPatch?.createdAt || Date.now(),
+    conversationId: currentConversationId.value,
   }
 
   await addPatch(patch)
+  await linkPatchToMessage(pendingApply.value.messageId, patch.id)
   pendingApply.value = null
 }
 
@@ -325,6 +356,18 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.conversation-chip {
+  margin-left: auto;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-light);
+  color: var(--accent);
 }
 
 .input-area {

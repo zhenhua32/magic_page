@@ -18,6 +18,7 @@ export interface Conversation {
   messages: ChatMessage[]
   patchIds: string[]
   createdAt: number
+  updatedAt: number
 }
 
 export interface ChatMessage {

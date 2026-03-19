@@ -68,7 +68,7 @@ export async function getConversationsForUrl(url: string): Promise<Conversation[
   const all = await getAllConversations()
   return Object.values(all)
     .filter((c) => c.url === url)
-    .sort((a, b) => b.createdAt - a.createdAt)
+    .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt))
 }
 
 export async function getConversation(id: string): Promise<Conversation | undefined> {
@@ -78,7 +78,10 @@ export async function getConversation(id: string): Promise<Conversation | undefi
 
 export async function saveConversation(conversation: Conversation): Promise<void> {
   const all = await getAllConversations()
-  all[conversation.id] = conversation
+  all[conversation.id] = {
+    ...conversation,
+    updatedAt: conversation.updatedAt || Date.now(),
+  }
   await setAllConversations(all)
 }
 
