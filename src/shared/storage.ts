@@ -41,7 +41,8 @@ async function setAllPatches(patches: Record<string, Patch>): Promise<void> {
 
 export async function getPatchesForUrl(url: string): Promise<Patch[]> {
   const all = await getAllPatches()
-  return Object.values(all).filter((p) => p.url === url)
+  const normalized = normalizeUrl(url)
+  return Object.values(all).filter((p) => normalizeUrl(p.url) === normalized)
 }
 
 export async function getPatch(id: string): Promise<Patch | undefined> {
@@ -51,6 +52,7 @@ export async function getPatch(id: string): Promise<Patch | undefined> {
 
 export async function savePatch(patch: Patch): Promise<void> {
   const all = await getAllPatches()
+  patch.url = normalizeUrl(patch.url)
   all[patch.id] = patch
   await setAllPatches(all)
 }
@@ -82,8 +84,9 @@ async function setAllConversations(conversations: Record<string, Conversation>):
 
 export async function getConversationsForUrl(url: string): Promise<Conversation[]> {
   const all = await getAllConversations()
+  const normalized = normalizeUrl(url)
   return Object.values(all)
-    .filter((c) => c.url === url)
+    .filter((c) => normalizeUrl(c.url) === normalized)
     .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt))
 }
 
@@ -108,6 +111,22 @@ export async function deleteConversation(id: string): Promise<void> {
 }
 
 // ===== Utilities =====
+
+/** 标准化 URL：去除 hash 和末尾斜杠，保留协议、域名、路径、查询参数 */
+export function normalizeUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    u.hash = ''
+    // 去除末尾斜杠（但保留根路径 /）
+    let normalized = u.toString()
+    if (normalized.endsWith('/') && u.pathname !== '/') {
+      normalized = normalized.slice(0, -1)
+    }
+    return normalized
+  } catch {
+    return url
+  }
+}
 
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
