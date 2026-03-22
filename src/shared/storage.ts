@@ -25,7 +25,8 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
-  await chrome.storage.sync.set({ settings })
+  const cleanSettings = JSON.parse(JSON.stringify(settings))
+  await chrome.storage.sync.set({ settings: cleanSettings })
 }
 
 // ===== Patches (chrome.storage.local) =====
@@ -36,7 +37,8 @@ async function getAllPatches(): Promise<Record<string, Patch>> {
 }
 
 async function setAllPatches(patches: Record<string, Patch>): Promise<void> {
-  await chrome.storage.local.set({ patches })
+  const cleanPatches = JSON.parse(JSON.stringify(patches))
+  await chrome.storage.local.set({ patches: cleanPatches })
 }
 
 export async function getPatchesForUrl(url: string): Promise<Patch[]> {
@@ -79,7 +81,8 @@ async function getAllConversations(): Promise<Record<string, Conversation>> {
 }
 
 async function setAllConversations(conversations: Record<string, Conversation>): Promise<void> {
-  await chrome.storage.local.set({ conversations })
+  const cleanConversations = JSON.parse(JSON.stringify(conversations))
+  await chrome.storage.local.set({ conversations: cleanConversations })
 }
 
 export async function getConversationsForUrl(url: string): Promise<Conversation[]> {
