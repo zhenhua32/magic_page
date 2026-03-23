@@ -73,7 +73,14 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 // 监听来自 Side Panel 的消息并转发到 Content Script
 chrome.runtime.onMessage.addListener(
-  (message: ExtensionMessage, sender, sendResponse) => {
+  (message: ExtensionMessage & { action: string }, sender, sendResponse) => {
+    // 编辑器弹窗的消息需要广播给侧边栏
+    if (message.action === 'EDITOR_DONE' || message.action === 'EDITOR_CANCELLED') {
+      // 转发给所有其他 extension 页面（侧边栏会收到）
+      chrome.runtime.sendMessage(message).catch(() => {})
+      sendResponse({ ok: true })
+      return false
+    }
     handleMessage(message, sender).then(sendResponse).catch((err) => {
       sendResponse({ error: err.message })
     })

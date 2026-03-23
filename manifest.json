@@ -15,6 +15,12 @@
     "scripting",
     "tabs"
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/editor/index.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "background": {
     "service_worker": "src/background/service-worker.ts",
     "type": "module"

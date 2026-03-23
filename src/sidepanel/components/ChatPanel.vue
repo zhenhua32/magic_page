@@ -135,19 +135,13 @@
       </div>
     </div>
 
-    <!-- 截图编辑器 -->
-    <ScreenshotEditor
-      v-model="editorOpen"
-      :image-url="rawScreenshotUrl"
-      @save="onScreenshotEdited"
-    />
+    <!-- 截图编辑器（通过弹窗打开） -->
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, inject, nextTick, watch, type Ref } from 'vue'
+import { ref, inject, nextTick, watch, onMounted, onBeforeUnmount, type Ref } from 'vue'
 import ChatMessage from './ChatMessage.vue'
-import ScreenshotEditor from './ScreenshotEditor.vue'
 import { useChat } from '../composables/useChat'
 import { generateId } from '@/shared/storage'
 import { type Patch, MessageAction } from '@/shared/types'
@@ -185,7 +179,21 @@ const visionMode = ref(false)
 const isCapturingScreenshot = ref(false)
 const rawScreenshotUrl = ref('')
 const editedScreenshotUrl = ref('')
-const editorOpen = ref(false)
+
+// 监听编辑器弹窗的消息
+function onEditorMessage(message: any) {
+  if (message?.action === 'EDITOR_DONE' && message?.payload?.dataUrl) {
+    editedScreenshotUrl.value = message.payload.dataUrl
+  }
+}
+
+onMounted(() => {
+  chrome.runtime.onMessage.addListener(onEditorMessage)
+})
+
+onBeforeUnmount(() => {
+  chrome.runtime.onMessage.removeListener(onEditorMessage)
+})
 
 // 截图与编辑逻辑
 async function captureScreenshot() {
@@ -214,14 +222,26 @@ async function captureAndEditScreenshot() {
   const url = await captureScreenshot()
   if (url) {
     rawScreenshotUrl.value = url
-    editorOpen.value = true
+    openEditorPopup(url)
   }
 }
 
+async function openEditorPopup(imageUrl: string) {
+  // 存储截图到 session storage，弹窗页面读取
+  await chrome.storage.session.set({ screenshotForEditor: imageUrl })
+  const editorUrl = chrome.runtime.getURL('src/editor/index.html')
+  chrome.windows.create({
+    url: editorUrl,
+    type: 'popup',
+    width: 1100,
+    height: 800,
+  })
+}
+
 function openScreenshotEditor() {
-  if (editedScreenshotUrl.value || rawScreenshotUrl.value) {
-    if (!rawScreenshotUrl.value) rawScreenshotUrl.value = editedScreenshotUrl.value
-    editorOpen.value = true
+  const url = editedScreenshotUrl.value || rawScreenshotUrl.value
+  if (url) {
+    openEditorPopup(url)
   } else {
     captureAndEditScreenshot()
   }

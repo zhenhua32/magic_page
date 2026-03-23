@@ -1,118 +1,97 @@
 <template>
-  <div v-if="modelValue" class="screenshot-editor-overlay">
-    <div class="editor-container">
-      <div class="editor-header">
-        <h3 class="editor-title">编辑截图</h3>
-        <div class="editor-tools">
-          <button
-            class="tool-btn"
-            :class="{ active: currentTool === 'pen' }"
-            @click="setTool('pen')"
-            title="画笔"
-          >
-            ✏️
-          </button>
-          <button
-            class="tool-btn"
-            :class="{ active: currentTool === 'rect' }"
-            @click="setTool('rect')"
-            title="矩形框"
-          >
-            🔲
-          </button>
-          <div class="divider"></div>
-          <button class="tool-btn" @click="undo" title="撤销">↩️</button>
-          <button class="tool-btn" @click="clear" title="清空标注">🗑️</button>
-        </div>
-        <div class="editor-actions">
-          <button class="btn btn-secondary" @click="close">取消</button>
-          <button class="btn btn-primary" @click="save">完成</button>
-        </div>
+  <div class="editor-fullscreen">
+    <div class="editor-header">
+      <h3 class="editor-title">编辑截图</h3>
+      <div class="editor-tools">
+        <button
+          class="tool-btn"
+          :class="{ active: currentTool === 'pen' }"
+          @click="setTool('pen')"
+          title="画笔"
+        >
+          ✏️
+        </button>
+        <button
+          class="tool-btn"
+          :class="{ active: currentTool === 'rect' }"
+          @click="setTool('rect')"
+          title="矩形框"
+        >
+          🔲
+        </button>
+        <div class="divider"></div>
+        <button class="tool-btn" @click="undo" title="撤销">↩️</button>
+        <button class="tool-btn" @click="clear" title="清空标注">🗑️</button>
       </div>
-      <div class="canvas-wrapper">
-        <canvas ref="canvasRef"></canvas>
+      <div class="editor-actions">
+        <button class="btn btn-secondary" @click="cancel">取消</button>
+        <button class="btn btn-primary" @click="save">完成</button>
       </div>
+    </div>
+    <div class="canvas-wrapper" ref="wrapperRef">
+      <canvas ref="canvasRef"></canvas>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import * as fabric from 'fabric'
 
-const props = defineProps<{
-  modelValue: boolean
-  imageUrl: string
-}>()
-
-const emit = defineEmits<{
-  (e: 'update:modelValue', value: boolean): void
-  (e: 'save', dataUrl: string): void
-}>()
-
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const wrapperRef = ref<HTMLElement | null>(null)
 let fabricCanvas: fabric.Canvas | null = null
 const currentTool = ref<'pen' | 'rect'>('pen')
 
-// 记录操作状态用于撤销（仅存储绘制对象，不存储背景图）
 const objectHistory: string[][] = []
 let isHistoryAction = false
-// 保留对原始背景图的引用，避免 clear/undo 丢失
 let backgroundImg: fabric.FabricImage | null = null
 
-watch(
-  () => props.modelValue,
-  async (newVal) => {
-    if (newVal && props.imageUrl) {
-      await nextTick() // 等待 v-if 挂载
-      // 再等一帧，让 flex 布局完成，这样 wrapper 才能拿到真实的 clientHeight
-      requestAnimationFrame(() => {
-        initCanvas()
-      })
-    } else {
-      disposeCanvas()
-    }
-  },
-)
+onMounted(async () => {
+  // 从 chrome.storage.session 获取截图数据
+  const data = await chrome.storage.session.get('screenshotForEditor')
+  const imageUrl = data.screenshotForEditor as string
+  if (!imageUrl) {
+    window.close()
+    return
+  }
+  initCanvas(imageUrl)
+})
 
-async function initCanvas() {
-  if (!canvasRef.value) return
+async function initCanvas(imageUrl: string) {
+  if (!canvasRef.value || !wrapperRef.value) return
 
-  // 获取容器尺寸以适应屏幕
-  const wrapper = canvasRef.value.parentElement
-  const maxWidth = wrapper?.clientWidth || 800
-  const maxHeight = wrapper?.clientHeight || 600
+  const maxWidth = wrapperRef.value.clientWidth - 32
+  const maxHeight = wrapperRef.value.clientHeight - 32
 
   fabricCanvas = new fabric.Canvas(canvasRef.value, {
     isDrawingMode: true,
   })
 
-  // Fabric.js v7 不自动创建 freeDrawingBrush，需手动初始化
   fabricCanvas.freeDrawingBrush = new fabric.PencilBrush(fabricCanvas)
   fabricCanvas.freeDrawingBrush.color = 'red'
   fabricCanvas.freeDrawingBrush.width = 3
 
   try {
-    // 将 data URL 转为 Blob URL 以规避扩展 CSP 限制
-    let loadUrl = props.imageUrl
-    if (props.imageUrl.startsWith('data:')) {
+    let loadUrl = imageUrl
+    if (imageUrl.startsWith('data:')) {
       try {
-        const res = await fetch(props.imageUrl)
+        const res = await fetch(imageUrl)
         const blob = await res.blob()
         loadUrl = URL.createObjectURL(blob)
       } catch {
-        // 降级使用原始 data URL
+        // fallback
       }
     }
     const img = await fabric.FabricImage.fromURL(loadUrl)
-    
-    // 按宽度缩放，让截图填满面板宽度，高度超出时可滚动
-    const scale = Math.min(maxWidth / img.width!, 1)
-    
+
+    // 同时按宽高缩放以适应窗口，保持比例
+    const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!, 1)
+
     const canvasWidth = img.width! * scale
     const canvasHeight = img.height! * scale
     fabricCanvas.setDimensions({ width: canvasWidth, height: canvasHeight })
-    
+
     img.scale(scale)
     fabricCanvas.backgroundImage = img
     backgroundImg = img
@@ -142,7 +121,6 @@ function setupEvents() {
     if (!isHistoryAction) saveHistory()
   })
 
-  // 矩形绘制逻辑
   let isDrawingRect = false
   let rect: fabric.Rect | null = null
   let origX = 0
@@ -159,8 +137,8 @@ function setupEvents() {
       top: origY,
       originX: 'left',
       originY: 'top',
-      width: pointer.x - origX,
-      height: pointer.y - origY,
+      width: 0,
+      height: 0,
       angle: 0,
       fill: 'transparent',
       stroke: 'red',
@@ -173,17 +151,13 @@ function setupEvents() {
   fabricCanvas.on('mouse:move', (o) => {
     if (!isDrawingRect || !rect || !fabricCanvas) return
     const pointer = fabricCanvas.getViewportPoint(o.e)
-    
-    if (origX > pointer.x) {
-      rect.set({ left: Math.abs(pointer.x) })
-    }
-    if (origY > pointer.y) {
-      rect.set({ top: Math.abs(pointer.y) })
-    }
-    
+
+    if (origX > pointer.x) rect.set({ left: Math.abs(pointer.x) })
+    if (origY > pointer.y) rect.set({ top: Math.abs(pointer.y) })
+
     rect.set({ width: Math.abs(origX - pointer.x) })
     rect.set({ height: Math.abs(origY - pointer.y) })
-    
+
     fabricCanvas.renderAll()
   })
 
@@ -215,26 +189,23 @@ function setTool(tool: 'pen' | 'rect') {
 
 function saveHistory() {
   if (!fabricCanvas) return
-  // 仅序列化绘制对象，不包含背景图（避免大量重复存储 data URL）
   const objects = fabricCanvas.getObjects().map(obj => JSON.stringify(obj.toJSON()))
   objectHistory.push(objects)
 }
 
 async function undo() {
   if (!fabricCanvas || objectHistory.length <= 1) return
-  objectHistory.pop() // 移除当前状态
+  objectHistory.pop()
   const previousObjects = objectHistory[objectHistory.length - 1]
   isHistoryAction = true
-  // 清除所有绘制对象，但保留背景图
   fabricCanvas.getObjects().slice().forEach(obj => fabricCanvas!.remove(obj))
-  // 恢复上一步的对象
   for (const objJson of previousObjects) {
     try {
       const parsed = JSON.parse(objJson)
       const objects = await fabric.util.enlivenObjects([parsed])
       objects.forEach(obj => fabricCanvas!.add(obj as fabric.FabricObject))
     } catch {
-      // 个别对象恢复失败时跳过
+      // skip
     }
   }
   fabricCanvas.renderAll()
@@ -243,77 +214,80 @@ async function undo() {
 
 function clear() {
   if (!fabricCanvas) return
-  // 只移除绘制对象，保留背景图
   fabricCanvas.getObjects().slice().forEach(obj => fabricCanvas!.remove(obj))
   fabricCanvas.renderAll()
   saveHistory()
 }
 
-function save() {
+async function save() {
   if (!fabricCanvas) return
   const bg = fabricCanvas.backgroundImage || backgroundImg
-  // 如果有背景图，按原始尺寸导出；否则按 canvas 尺寸
   const multiplier = bg ? bg.width! / fabricCanvas.width! : 1
   const dataUrl = fabricCanvas.toDataURL({
     format: 'jpeg',
     quality: 0.8,
     multiplier,
   })
-  emit('save', dataUrl)
-  close()
+  // 将编辑后的图片存入 session storage，通知侧边栏
+  await chrome.storage.session.set({ screenshotEdited: dataUrl })
+  await chrome.runtime.sendMessage({ action: 'EDITOR_DONE', payload: { dataUrl } })
+  window.close()
 }
 
-function close() {
-  emit('update:modelValue', false)
+function cancel() {
+  chrome.runtime.sendMessage({ action: 'EDITOR_CANCELLED' })
+  window.close()
 }
 
-function disposeCanvas() {
+onBeforeUnmount(() => {
   if (fabricCanvas) {
     fabricCanvas.dispose()
     fabricCanvas = null
   }
   backgroundImg = null
   objectHistory.length = 0
-}
-
-onBeforeUnmount(() => {
-  disposeCanvas()
 })
 </script>
 
-<style scoped>
-.screenshot-editor-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.8);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+<style>
+:root {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --text-primary: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --border-color: #27273a;
+  --bg-hover: rgba(255, 255, 255, 0.08);
 }
 
-.editor-container {
-  background-color: var(--bg-primary);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  width: 95%;
-  height: 95%;
-  max-width: 1200px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
   overflow: hidden;
 }
 
+.editor-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
 .editor-header {
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
   background-color: var(--bg-secondary);
+  flex-shrink: 0;
 }
 
 .editor-title {
@@ -335,6 +309,7 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   cursor: pointer;
   font-size: 16px;
+  color: var(--text-primary);
   transition: all 0.2s;
 }
 
@@ -359,19 +334,8 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
-.canvas-wrapper {
-  flex: 1;
-  overflow: auto;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 8px;
-  background-color: #222;
-}
-
-/* 按钮基础样式复用 */
 .btn {
-  padding: 6px 12px;
+  padding: 6px 16px;
   border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
@@ -384,7 +348,21 @@ onBeforeUnmount(() => {
 }
 
 .btn-primary {
-  background-color: var(--text-primary); /* 在这个项目中，我们可以根据您的 CSS 变量调整 */
-  color: var(--bg-primary); 
+  background-color: #7c3aed;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background-color: #6d28d9;
+}
+
+.canvas-wrapper {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background-color: #222;
 }
 </style>

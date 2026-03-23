@@ -18,6 +18,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         sidepanel: resolve(__dirname, 'src/sidepanel/index.html'),
+        editor: resolve(__dirname, 'src/editor/index.html'),
       },
     },
   },
