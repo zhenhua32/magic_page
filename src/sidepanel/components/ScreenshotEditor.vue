@@ -109,8 +109,9 @@ async function initCanvas() {
     // 计算缩放比例
     const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!, 1)
     
-    fabricCanvas.setWidth(img.width! * scale)
-    fabricCanvas.setHeight(img.height! * scale)
+    const canvasWidth = img.width! * scale
+    const canvasHeight = img.height! * scale
+    fabricCanvas.setDimensions({ width: canvasWidth, height: canvasHeight })
     
     img.scale(scale)
     fabricCanvas.backgroundImage = img
