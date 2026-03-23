@@ -25,9 +25,19 @@
       </div>
 
       <div class="form-group">
-        <label class="form-label">模型</label>
+        <label class="form-label">模型 (文本)</label>
         <input
           v-model="settings.model"
+          type="text"
+          class="form-input"
+          placeholder="gpt-4o"
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">视觉模型 (截图用)</label>
+        <input
+          v-model="settings.visionModel"
           type="text"
           class="form-input"
           placeholder="gpt-4o"

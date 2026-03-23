@@ -27,12 +27,14 @@ export interface ChatMessage {
   content: string
   timestamp: number
   patchId?: string
+  images?: string[]
 }
 
 export interface Settings {
   apiKey: string
   apiBase: string
   model: string
+  visionModel: string
   temperature: number
   maxContextTokens: number
   systemPrompt: string
@@ -42,6 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   apiBase: 'https://api.openai.com/v1',
   model: 'gpt-4o',
+  visionModel: 'gpt-4o',
   temperature: 0.7,
   maxContextTokens: 256000,
   systemPrompt: `你是一个网页修改助手。用户会描述想要对当前网页进行的修改，你需要生成对应的 CSS 和/或 JavaScript 代码来实现修改。
@@ -70,6 +73,7 @@ export enum MessageAction {
   TOGGLE_PATCH = 'TOGGLE_PATCH',
   GET_ACTIVE_TAB = 'GET_ACTIVE_TAB',
   PAGE_INFO_RESPONSE = 'PAGE_INFO_RESPONSE',
+  CAPTURE_SCREENSHOT = 'CAPTURE_SCREENSHOT',
 }
 
 export interface ExtensionMessage {

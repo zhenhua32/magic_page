@@ -125,6 +125,13 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
       return getActiveTabInfo()
     }
 
+    case MessageAction.CAPTURE_SCREENSHOT: {
+      const tab = await getActiveTabInfo()
+      if (!tab || !tab.windowId) throw new Error('无法获取当前标签页')
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 60 })
+      return { dataUrl }
+    }
+
     default:
       throw new Error(`Unknown action: ${message.action}`)
   }

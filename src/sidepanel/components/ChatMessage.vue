@@ -4,8 +4,10 @@
       <span class="role-label">{{ message.role === 'user' ? '你' : 'AI' }}</span>
       <span class="timestamp">{{ formatTime(message.timestamp) }}</span>
     </div>
-    <div class="message-body">
-      <!-- 纯文本部分 -->
+    <div class="message-body">      <!-- 渲染图片（如果有） -->
+      <div v-if="message.images && message.images.length > 0" class="message-images">
+        <img v-for="(img, idx) in message.images" :key="idx" :src="img" class="message-image" alt="User upload" />
+      </div>      <!-- 纯文本部分 -->
       <template v-for="(block, i) in parsedContent" :key="i">
         <p v-if="block.type === 'text'" class="text-block">{{ block.content }}</p>
         <div v-else class="code-block">
@@ -187,5 +189,20 @@ function formatTime(ts: number): string {
 
 .code-content code {
   color: var(--text-primary);
+}
+
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.message-image {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  object-fit: contain;
 }
 </style>

@@ -52,13 +52,30 @@
 
     <!-- 输入区域 -->
     <div class="input-area">
+      <!-- 截图缩略图预览（仅在视觉模式下显示） -->
+      <div v-if="visionMode && editedScreenshotUrl" class="screenshot-preview">
+        <img :src="editedScreenshotUrl" alt="Screenshot" @click="openScreenshotEditor" />
+        <button class="remove-screenshot" @click="editedScreenshotUrl = ''">×</button>
+        <div class="edit-hint" @click="openScreenshotEditor">点击上面的图片进行标注</div>
+      </div>
+      <div v-else-if="visionMode && !isCapturingScreenshot" class="screenshot-preview placeholder" @click="captureAndEditScreenshot">
+        <div class="placeholder-content">
+          <span>📷 点击获取当前屏幕以发送或标注</span>
+        </div>
+      </div>
+      <div v-else-if="visionMode && isCapturingScreenshot" class="screenshot-preview placeholder">
+        <div class="placeholder-content">
+          <span>⏳ 截图中...</span>
+        </div>
+      </div>
+
       <div class="input-wrapper">
         <textarea
           v-model="inputText"
           class="message-input"
           placeholder="描述你想修改的内容..."
           rows="1"
-          @keydown.enter.exact.prevent="sendMessage"
+          @keydown.enter.exact.prevent="handleSend"
           @input="autoResize"
           ref="inputRef"
         ></textarea>
@@ -69,7 +86,7 @@
           <button
             v-else
             class="action-btn send-btn"
-            @click="sendMessage"
+            @click="handleSend"
             :disabled="!inputText.trim()"
             title="发送"
           >
@@ -78,8 +95,17 @@
         </div>
       </div>
       <div class="input-toolbar">
-        <button class="toolbar-btn" @click="clearMessages" title="清空对话">🗑️ 清空</button>
-        <button class="toolbar-btn" @click="loadPageInfo" title="刷新页面信息">🔄 刷新</button>
+        <div class="toolbar-left">
+          <button class="toolbar-btn" @click="clearMessages" title="清空对话">🗑️ 清空</button>
+          <button class="toolbar-btn" @click="loadPageInfo" title="刷新页面信息">🔄 刷新</button>
+        </div>
+        <div class="toolbar-right">
+          <label class="mode-toggle">
+            <input type="checkbox" v-model="visionMode" />
+            <span class="toggle-track"></span>
+            <span class="toggle-label">👀 视觉模式</span>
+          </label>
+        </div>
       </div>
     </div>
 
@@ -108,15 +134,23 @@
         </div>
       </div>
     </div>
+
+    <!-- 截图编辑器 -->
+    <ScreenshotEditor
+      v-model="editorOpen"
+      :image-url="rawScreenshotUrl"
+      @save="onScreenshotEdited"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, inject, nextTick, watch, type Ref } from 'vue'
 import ChatMessage from './ChatMessage.vue'
+import ScreenshotEditor from './ScreenshotEditor.vue'
 import { useChat } from '../composables/useChat'
 import { generateId } from '@/shared/storage'
-import type { Patch } from '@/shared/types'
+import { type Patch, MessageAction } from '@/shared/types'
 import type { usePatches } from '../composables/usePatches'
 
 const {
@@ -146,6 +180,71 @@ watch(pageInfo, (info) => {
 
 const messagesContainer = ref<HTMLElement>()
 const inputRef = ref<HTMLTextAreaElement>()
+
+const visionMode = ref(false)
+const isCapturingScreenshot = ref(false)
+const rawScreenshotUrl = ref('')
+const editedScreenshotUrl = ref('')
+const editorOpen = ref(false)
+
+// 截图与编辑逻辑
+async function captureScreenshot() {
+  if (isCapturingScreenshot.value) return ''
+  isCapturingScreenshot.value = true
+  try {
+    const res = await chrome.runtime.sendMessage({ action: MessageAction.CAPTURE_SCREENSHOT })
+    if (res?.dataUrl) {
+      return res.dataUrl
+    }
+  } catch (err) {
+    console.warn('Failed to capture screenshot:', err)
+  } finally {
+    isCapturingScreenshot.value = false
+  }
+  return ''
+}
+
+async function captureAndEditScreenshot() {
+  const url = await captureScreenshot()
+  if (url) {
+    rawScreenshotUrl.value = url
+    editorOpen.value = true
+  }
+}
+
+function openScreenshotEditor() {
+  if (editedScreenshotUrl.value || rawScreenshotUrl.value) {
+    if (!rawScreenshotUrl.value) rawScreenshotUrl.value = editedScreenshotUrl.value
+    editorOpen.value = true
+  } else {
+    captureAndEditScreenshot()
+  }
+}
+
+function onScreenshotEdited(dataUrl: string) {
+  editedScreenshotUrl.value = dataUrl
+}
+
+async function handleSend() {
+  if (!inputText.value.trim() || isStreaming.value) return
+
+  let images: string[] | undefined = undefined
+
+  if (visionMode.value) {
+    if (editedScreenshotUrl.value) {
+      images = [editedScreenshotUrl.value]
+    } else {
+      const url = await captureScreenshot()
+      if (url) images = [url]
+    }
+  }
+
+  const currentFiles = images
+  editedScreenshotUrl.value = ''
+  rawScreenshotUrl.value = ''
+
+  await sendMessage(currentFiles)
+}
 
 interface PendingApply {
   lang: string
@@ -207,7 +306,7 @@ async function confirmApply() {
 
 function quickSend(text: string) {
   inputText.value = text
-  sendMessage()
+  handleSend()
 }
 
 function autoResize(event: Event) {
@@ -454,8 +553,141 @@ watch(
 
 .input-toolbar {
   display: flex;
-  gap: 8px;
+  justify-content: space-between;
   margin-top: 8px;
+}
+
+.toolbar-left, .toolbar-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mode-toggle input {
+  display: none;
+}
+
+.toggle-track {
+  width: 28px;
+  height: 16px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+  position: relative;
+  transition: all 0.2s;
+  border: 1px solid var(--border);
+}
+
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.mode-toggle input:checked + .toggle-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.mode-toggle input:checked + .toggle-track::after {
+  left: 13px;
+  background: white;
+}
+
+.mode-toggle input:checked ~ .toggle-label {
+  color: var(--accent);
+}
+
+/* Screenshot Preview */
+.screenshot-preview {
+  position: relative;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  overflow: hidden;
+  max-width: 200px;
+  max-height: 120px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.screenshot-preview img {
+  max-width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+  cursor: pointer;
+  display: block;
+}
+
+.screenshot-preview.placeholder {
+  cursor: pointer;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  background: var(--bg-hover);
+}
+
+.placeholder-content {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.remove-screenshot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.screenshot-preview:hover .remove-screenshot {
+  opacity: 1;
+}
+
+.edit-hint {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  font-size: 10px;
+  text-align: center;
+  padding: 4px 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.screenshot-preview:hover .edit-hint {
+  opacity: 1;
 }
 
 .toolbar-btn {

@@ -179,7 +179,7 @@ export function useChat() {
     return prompt
   }
 
-  async function sendMessage() {
+  async function sendMessage(images?: string[]) {
     const text = inputText.value.trim()
     if (!text || isStreaming.value) return
 
@@ -192,6 +192,7 @@ export function useChat() {
       role: 'user',
       content: text,
       timestamp: Date.now(),
+      ...(images?.length ? { images } : {}),
     }
     messages.value.push(userMsg)
     inputText.value = ''
@@ -208,7 +209,18 @@ export function useChat() {
       { role: 'system', content: systemPrompt },
       ...messages.value
         .filter((m) => m.role !== 'system')
-        .map((m) => ({ role: m.role, content: m.content })),
+        .map((m) => {
+          if (m.images && m.images.length > 0) {
+            return {
+              role: m.role,
+              content: [
+                { type: 'text', text: m.content },
+                ...m.images.map(url => ({ type: 'image_url', image_url: { url } }))
+              ]
+            };
+          }
+          return { role: m.role, content: m.content };
+        }),
     ]
 
     abortController = await streamChat(apiMessages, {

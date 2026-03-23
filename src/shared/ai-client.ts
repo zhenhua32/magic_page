@@ -8,7 +8,7 @@ export interface StreamCallbacks {
 }
 
 export async function streamChat(
-  messages: { role: string; content: string }[],
+  messages: { role: string; content: string | any[] }[],
   callbacks: StreamCallbacks,
   settingsOverride?: Partial<Settings>,
 ): Promise<AbortController> {
@@ -21,6 +21,10 @@ export async function streamChat(
   }
 
   const apiUrl = `${settings.apiBase.replace(/\/+$/, '')}/chat/completions`
+  
+  // 检查是否包含图片，如果包含则使用 visionModel
+  const hasVision = messages.some(m => Array.isArray(m.content) && m.content.some(c => c.type === 'image_url'))
+  const requestModel = hasVision && settings.visionModel ? settings.visionModel : settings.model
 
   try {
     const response = await fetch(apiUrl, {
@@ -30,7 +34,7 @@ export async function streamChat(
         Authorization: `Bearer ${settings.apiKey}`,
       },
       body: JSON.stringify({
-        model: settings.model,
+        model: requestModel,
         messages,
         temperature: settings.temperature,
         stream: true,
