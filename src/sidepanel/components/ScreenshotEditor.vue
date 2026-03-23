@@ -54,9 +54,11 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 let fabricCanvas: fabric.Canvas | null = null
 const currentTool = ref<'pen' | 'rect'>('pen')
 
-// 记录操作状态用于撤销
-const history: string[] = []
+// 记录操作状态用于撤销（仅存储绘制对象，不存储背景图）
+const objectHistory: string[][] = []
 let isHistoryAction = false
+// 保留对原始背景图的引用，避免 clear/undo 丢失
+let backgroundImg: fabric.FabricImage | null = null
 
 watch(
   () => props.modelValue,
@@ -85,12 +87,24 @@ async function initCanvas() {
     isDrawingMode: true,
   })
 
-  // 设置画笔样式
+  // Fabric.js v7 不自动创建 freeDrawingBrush，需手动初始化
+  fabricCanvas.freeDrawingBrush = new fabric.PencilBrush(fabricCanvas)
   fabricCanvas.freeDrawingBrush.color = 'red'
   fabricCanvas.freeDrawingBrush.width = 3
 
   try {
-    const img = await fabric.FabricImage.fromURL(props.imageUrl)
+    // 将 data URL 转为 Blob URL 以规避扩展 CSP 限制
+    let loadUrl = props.imageUrl
+    if (props.imageUrl.startsWith('data:')) {
+      try {
+        const res = await fetch(props.imageUrl)
+        const blob = await res.blob()
+        loadUrl = URL.createObjectURL(blob)
+      } catch {
+        // 降级使用原始 data URL
+      }
+    }
+    const img = await fabric.FabricImage.fromURL(loadUrl)
     
     // 计算缩放比例
     const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!, 1)
@@ -100,6 +114,7 @@ async function initCanvas() {
     
     img.scale(scale)
     fabricCanvas.backgroundImage = img
+    backgroundImg = img
     fabricCanvas.renderAll()
 
     setupEvents()
@@ -199,35 +214,49 @@ function setTool(tool: 'pen' | 'rect') {
 
 function saveHistory() {
   if (!fabricCanvas) return
-  const json = JSON.stringify(fabricCanvas.toJSON())
-  history.push(json)
+  // 仅序列化绘制对象，不包含背景图（避免大量重复存储 data URL）
+  const objects = fabricCanvas.getObjects().map(obj => JSON.stringify(obj.toJSON()))
+  objectHistory.push(objects)
 }
 
 async function undo() {
-  if (!fabricCanvas || history.length <= 1) return
-  history.pop() // 移除当前状态
-  const previousState = history[history.length - 1]
+  if (!fabricCanvas || objectHistory.length <= 1) return
+  objectHistory.pop() // 移除当前状态
+  const previousObjects = objectHistory[objectHistory.length - 1]
   isHistoryAction = true
-  await fabricCanvas.loadFromJSON(previousState)
+  // 清除所有绘制对象，但保留背景图
+  fabricCanvas.getObjects().slice().forEach(obj => fabricCanvas!.remove(obj))
+  // 恢复上一步的对象
+  for (const objJson of previousObjects) {
+    try {
+      const parsed = JSON.parse(objJson)
+      const objects = await fabric.util.enlivenObjects([parsed])
+      objects.forEach(obj => fabricCanvas!.add(obj as fabric.FabricObject))
+    } catch {
+      // 个别对象恢复失败时跳过
+    }
+  }
   fabricCanvas.renderAll()
   isHistoryAction = false
 }
 
 function clear() {
   if (!fabricCanvas) return
-  fabricCanvas.clear()
-  if (fabricCanvas.backgroundImage) {
-    fabricCanvas.backgroundImage = fabricCanvas.backgroundImage
-  }
+  // 只移除绘制对象，保留背景图
+  fabricCanvas.getObjects().slice().forEach(obj => fabricCanvas!.remove(obj))
+  fabricCanvas.renderAll()
   saveHistory()
 }
 
 function save() {
   if (!fabricCanvas) return
+  const bg = fabricCanvas.backgroundImage || backgroundImg
+  // 如果有背景图，按原始尺寸导出；否则按 canvas 尺寸
+  const multiplier = bg ? bg.width! / fabricCanvas.width! : 1
   const dataUrl = fabricCanvas.toDataURL({
     format: 'jpeg',
     quality: 0.8,
-    multiplier: 1 / (fabricCanvas.width! / fabricCanvas.backgroundImage!.width!), // 恢复原始大小
+    multiplier,
   })
   emit('save', dataUrl)
   close()
@@ -242,7 +271,8 @@ function disposeCanvas() {
     fabricCanvas.dispose()
     fabricCanvas = null
   }
-  history.length = 0
+  backgroundImg = null
+  objectHistory.length = 0
 }
 
 onBeforeUnmount(() => {

@@ -193,10 +193,16 @@ async function captureScreenshot() {
   isCapturingScreenshot.value = true
   try {
     const res = await chrome.runtime.sendMessage({ action: MessageAction.CAPTURE_SCREENSHOT })
+    if (res?.error) {
+      error.value = `截图失败: ${res.error}`
+      return ''
+    }
     if (res?.dataUrl) {
       return res.dataUrl
     }
-  } catch (err) {
+    error.value = '截图失败: 未获取到图片数据'
+  } catch (err: any) {
+    error.value = `截图失败: ${err?.message || '未知错误'}`
     console.warn('Failed to capture screenshot:', err)
   } finally {
     isCapturingScreenshot.value = false
