@@ -62,8 +62,11 @@ watch(
   () => props.modelValue,
   async (newVal) => {
     if (newVal && props.imageUrl) {
-      await nextTick()
-      initCanvas()
+      await nextTick() // 等待 v-if 挂载
+      // 再等一帧，让 flex 布局完成，这样 wrapper 才能拿到真实的 clientHeight
+      requestAnimationFrame(() => {
+        initCanvas()
+      })
     } else {
       disposeCanvas()
     }

@@ -128,7 +128,8 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
     case MessageAction.CAPTURE_SCREENSHOT: {
       const tab = await getActiveTabInfo()
       if (!tab || !tab.windowId) throw new Error('无法获取当前标签页')
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 60 })
+      // 使用 null 作为 windowId 来截取当前活动窗口的截图
+      const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 60 })
       return { dataUrl }
     }
 
