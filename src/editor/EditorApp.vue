@@ -85,6 +85,14 @@ async function initCanvas(imageUrl: string) {
     }
     const img = await fabric.FabricImage.fromURL(loadUrl)
 
+    // Fabric.js v7 默认 originX/originY 为 'center'，需要改为左上角对齐
+    img.set({
+      originX: 'left',
+      originY: 'top',
+      left: 0,
+      top: 0,
+    })
+
     // 同时按宽高缩放以适应窗口，保持比例
     const scale = Math.min(maxWidth / img.width!, maxHeight / img.height!, 1)
 
