@@ -21,13 +21,16 @@
       />
 
       <!-- 流式输出中 -->
-      <div v-if="isStreaming && currentStreamText" class="chat-message assistant streaming">
+      <div v-if="isStreaming" class="chat-message assistant streaming">
         <div class="message-header">
           <span class="role-label">AI</span>
           <span class="streaming-indicator">● 生成中...</span>
         </div>
         <div class="message-body">
-          <p class="text-block">{{ currentStreamText }}</p>
+          <p v-if="currentStreamText" class="text-block">{{ currentStreamText }}</p>
+          <div v-else class="thinking-indicator">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
         </div>
       </div>
 
@@ -568,5 +571,38 @@ watch(
   background: var(--bg-card);
   color: var(--text-primary);
   border: 1px solid var(--border);
+}
+
+/* Thinking indicator */
+.thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 4px;
+}
+
+.thinking-indicator .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--text-muted);
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.thinking-indicator .dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.thinking-indicator .dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% { 
+    transform: scale(0);
+  } 40% { 
+    transform: scale(1);
+  }
 }
 </style>
