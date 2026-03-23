@@ -180,6 +180,11 @@ const isCapturingScreenshot = ref(false)
 const rawScreenshotUrl = ref('')
 const editedScreenshotUrl = ref('')
 
+// 持久化视觉模式状态
+watch(visionMode, (val) => {
+  chrome.storage.local.set({ visionMode: val })
+})
+
 // 监听编辑器弹窗的消息
 function onEditorMessage(message: any) {
   if (message?.action === 'EDITOR_DONE' && message?.payload?.dataUrl) {
@@ -187,8 +192,10 @@ function onEditorMessage(message: any) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   chrome.runtime.onMessage.addListener(onEditorMessage)
+  const stored = await chrome.storage.local.get('visionMode')
+  if (stored.visionMode === true) visionMode.value = true
 })
 
 onBeforeUnmount(() => {
