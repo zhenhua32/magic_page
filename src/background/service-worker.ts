@@ -88,6 +88,23 @@ chrome.runtime.onMessage.addListener(
   },
 )
 
+/** 使用 chrome.scripting API 在页面主世界执行 JS（绕过页面 CSP 限制） */
+async function executeJSInPage(tabId: number, patchId: string, code: string): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    func: (patchId: string, code: string) => {
+      try {
+        const fn = new Function(`'use strict';\n${code}`)
+        fn()
+      } catch (e) {
+        console.error(`[MagicPage] Patch "${patchId}" JS error:`, e)
+      }
+    },
+    args: [patchId, code],
+  })
+}
+
 async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.MessageSender) {
   switch (message.action) {
     case MessageAction.GET_PAGE_INFO: {
@@ -101,12 +118,25 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
     case MessageAction.INJECT_PATCH: {
       const tab = await getActiveTabInfo()
       if (!tab?.id) throw new Error('无法获取当前标签页')
-      return chrome.tabs.sendMessage(tab.id, message)
+      const payload = message.payload as PatchPayload
+      // CSS 通过 content script 注入（支持通过 data 属性追踪和移除）
+      if (payload.cssCode) {
+        await chrome.tabs.sendMessage(tab.id, {
+          action: MessageAction.INJECT_PATCH,
+          payload: { patchId: payload.patchId, cssCode: payload.cssCode },
+        })
+      }
+      // JS 通过 chrome.scripting API 在页面主世界执行（绕过页面 CSP 限制）
+      if (payload.jsCode) {
+        await executeJSInPage(tab.id, payload.patchId, payload.jsCode)
+      }
+      return { success: true }
     }
 
     case MessageAction.REMOVE_PATCH: {
       const tab = await getActiveTabInfo()
       if (!tab?.id) throw new Error('无法获取当前标签页')
+      // JS 副作用无法撤销，仅移除 CSS
       return chrome.tabs.sendMessage(tab.id, message)
     }
 
@@ -122,10 +152,26 @@ async function handleMessage(message: ExtensionMessage, sender: chrome.runtime.M
           payload.jsCode = patch.jsCode
         }
       }
-      return chrome.tabs.sendMessage(tab.id, {
-        action: MessageAction.TOGGLE_PATCH,
-        payload,
-      })
+      if (payload.enabled) {
+        // CSS 通过 content script 注入
+        if (payload.cssCode) {
+          await chrome.tabs.sendMessage(tab.id, {
+            action: MessageAction.TOGGLE_PATCH,
+            payload: { patchId: payload.patchId, cssCode: payload.cssCode, enabled: true },
+          })
+        }
+        // JS 通过 chrome.scripting API 执行
+        if (payload.jsCode) {
+          await executeJSInPage(tab.id, payload.patchId, payload.jsCode)
+        }
+      } else {
+        // 禁用时只需移除 CSS（JS 副作用无法撤销）
+        await chrome.tabs.sendMessage(tab.id, {
+          action: MessageAction.TOGGLE_PATCH,
+          payload: { patchId: payload.patchId, enabled: false },
+        })
+      }
+      return { success: true }
     }
 
     case MessageAction.GET_ACTIVE_TAB: {
@@ -161,17 +207,27 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     const enabledPatches = patches.filter((p) => p.enabled)
 
     for (const patch of enabledPatches) {
-      try {
-        await chrome.tabs.sendMessage(tabId, {
-          action: MessageAction.INJECT_PATCH,
-          payload: {
-            patchId: patch.id,
-            cssCode: patch.cssCode,
-            jsCode: patch.jsCode,
-          } as PatchPayload,
-        })
-      } catch {
-        // content script 可能尚未加载，忽略
+      // CSS 通过 content script 注入
+      if (patch.cssCode) {
+        try {
+          await chrome.tabs.sendMessage(tabId, {
+            action: MessageAction.INJECT_PATCH,
+            payload: {
+              patchId: patch.id,
+              cssCode: patch.cssCode,
+            } as PatchPayload,
+          })
+        } catch {
+          // content script 可能尚未加载，忽略
+        }
+      }
+      // JS 通过 chrome.scripting API 注入（绕过页面 CSP）
+      if (patch.jsCode) {
+        try {
+          await executeJSInPage(tabId, patch.id, patch.jsCode)
+        } catch {
+          // 执行失败时忽略
+        }
       }
     }
   } catch {
