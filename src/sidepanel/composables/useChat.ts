@@ -1,5 +1,5 @@
-import { ref, onMounted } from 'vue'
-import type { ChatMessage, PageInfo } from '@/shared/types'
+import { ref, computed, onMounted } from 'vue'
+import type { ChatMessage, PageInfo, Settings } from '@/shared/types'
 import { DEFAULT_SETTINGS } from '@/shared/types'
 import { streamChat, extractCodeBlocks } from '@/shared/ai-client'
 import { getConversationsForUrl, getSettings, saveConversation, deleteConversation } from '@/shared/storage'
@@ -19,6 +19,7 @@ export function useChat() {
   const currentConversationCreatedAt = ref(0)
 
   let abortController: AbortController | null = null
+  const cachedSettings = ref<Settings | null>(null)
 
   function normalizePageInfo(value: PageInfo | null | undefined): PageInfo | null {
     if (!value) return null
@@ -179,6 +180,46 @@ export function useChat() {
     return prompt
   }
 
+  /** 预估本次发送将消耗的 token 数（直接读取响应式数据，确保依赖追踪） */
+  const estimatedTokenCount = computed(() => {
+    const settings = cachedSettings.value || DEFAULT_SETTINGS
+    const maxTokens = settings.maxContextTokens || DEFAULT_SETTINGS.maxContextTokens
+    const tokenBudget = Math.floor(maxTokens * 0.7)
+
+    // 1. 系统提示词
+    const sysPrompt = settings.systemPrompt || DEFAULT_SETTINGS.systemPrompt
+    let systemTokens = estimateTokens(sysPrompt)
+
+    // 2. 页面信息（直接读取 pageInfo.value 确保 Vue 追踪）
+    const info = pageInfo.value
+    if (info) {
+      const pageHeader = `当前页面信息：\n- URL: ${info.url}\n- 标题: ${info.title}\n- 描述: ${info.description || '无'}\n\n`
+      systemTokens += estimateTokens(pageHeader)
+
+      const fullHtml = info.fullHtml || ''
+      const fullHtmlTokens = estimateTokens(fullHtml)
+      const remaining = tokenBudget - systemTokens
+      if (remaining > 0) {
+        if (fullHtmlTokens <= remaining) {
+          systemTokens += fullHtmlTokens
+        } else {
+          // 截断场景，按预算计
+          systemTokens += remaining
+        }
+      }
+    }
+
+    // 3. 历史消息
+    const messageTokens = messages.value.reduce((sum, msg) => {
+      return sum + estimateTokens(msg.content) + 4
+    }, 0)
+
+    // 4. 当前输入
+    const inputTokens = estimateTokens(inputText.value)
+
+    return systemTokens + messageTokens + inputTokens
+  })
+
   async function sendMessage(images?: string[]) {
     const text = inputText.value.trim()
     if (!text || isStreaming.value) return
@@ -203,6 +244,7 @@ export function useChat() {
     currentStreamText.value = ''
 
     const settings = await getSettings()
+    cachedSettings.value = settings
     const systemPrompt = buildSystemPrompt(settings)
 
     const apiMessages = [
@@ -298,7 +340,10 @@ export function useChat() {
     return extractCodeBlocks(content)
   }
 
-  onMounted(loadPageInfo)
+  onMounted(async () => {
+    await loadPageInfo()
+    cachedSettings.value = await getSettings()
+  })
 
   return {
     messages,
@@ -316,5 +361,6 @@ export function useChat() {
     loadPageInfo,
     linkPatchToMessage,
     getLatestPatchId,
+    estimatedTokenCount,
   }
 }

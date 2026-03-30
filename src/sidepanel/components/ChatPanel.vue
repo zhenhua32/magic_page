@@ -98,6 +98,9 @@
         <div class="toolbar-left">
           <button class="toolbar-btn" @click="clearMessages" title="清空对话">🗑️ 清空</button>
           <button class="toolbar-btn" @click="loadPageInfo" title="刷新页面信息">🔄 刷新</button>
+          <span class="token-hint" :title="`预计消耗 ${estimatedTokenCount} tokens`">
+            🪙 ~{{ estimatedTokenCount >= 1000 ? (estimatedTokenCount / 1000).toFixed(1) + 'k' : estimatedTokenCount }} tokens
+          </span>
         </div>
         <div class="toolbar-right">
           <label class="mode-toggle">
@@ -162,6 +165,7 @@ const {
   loadPageInfo,
   linkPatchToMessage,
   getLatestPatchId,
+  estimatedTokenCount,
 } = useChat()
 
 const sharedCurrentUrl = inject<Ref<string>>('sharedCurrentUrl')!
@@ -735,6 +739,15 @@ watch(
 .toolbar-btn:hover {
   background: var(--accent-light);
   color: var(--text-primary);
+}
+
+.token-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  user-select: none;
 }
 
 /* Apply dialog */
